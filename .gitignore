@@ -1,0 +1,33 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+
+
+
+# dependencies
+image_web/node_modules
+image_web/.pnp
+.pnp.js
+
+# testing
+image_web/coverage
+
+# production
+image_web/build
+
+# misc
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+
+image_flask/__pycache__
+image_flask/images/*
+image_flask/results/interpolations/*
+image_flask/results/variations/*
+image_flask/api.log
