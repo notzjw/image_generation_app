@@ -2519,9 +2519,12 @@ class Decoder(nn.Module):
         
         # redis
         self.redis_client = None
-        self.progress_key = 'progress_uuid'
+        self.task_type = None
+        self.task_id = None
         self.sample_count = 0
         self.sample_total = 0
+        # 状态
+        self.working = False
 
         # clip
         self.clip = None
@@ -2963,7 +2966,7 @@ class Decoder(nn.Module):
         if not is_latent_diffusion:
             lowres_cond_img = maybe(self.normalize_img)(lowres_cond_img)
 
-        for time, time_next in tqdm(time_pairs, desc = 'sampling loop time step'):
+        for time, time_next in time_pairs:
             is_last_timestep = time_next == 0
 
             for r in reversed(range(0, resample_times)):
@@ -3023,7 +3026,7 @@ class Decoder(nn.Module):
                 progress = int((self.sample_count / self.sample_total) * 100)
                 if progress >= 100:
                     progress = 99
-                self.redis_client.set(str(self.progress_key), progress)
+                self.redis_client.set(self.task_id, progress)
         if exists(inpaint_image):
             img = (img * ~inpaint_mask) + (inpaint_image * inpaint_mask)
 
@@ -3387,38 +3390,41 @@ class Decoder(nn.Module):
                 utils.save_image(result, save_dir + f'/{image_path_list[i].stem}_cdm_{number}{image_path_list[i].suffix}')
                 utils.save_image(result_image, save_dir + f'/{image_path_list[i].stem}_{number}{image_path_list[i].suffix}')
 
-
-    def set_redis_client(self, redis_client):
-        self.redis_client = redis_client
-
-    def img2img_for_flask(self, image_path: Path, save_path_list):
+    def variations(self, image_path: Path, save_image_path_list):
         # 设置查询进度条
         self.sample_count = 0
         self.sample_total = sum(self.sample_timesteps)
 
         image = Image.open(image_path)
         image_tensor = self._pil_to_torch(image).to('cuda')
-        image_tensor = image_tensor.repeat(len(save_path_list), 1, 1, 1)
+        image_tensor = image_tensor.repeat(len(save_image_path_list), 1, 1, 1)
         # images --clip--> img_embed
         image_embed = self.clip.embed_image(image_tensor).image_embed
         # img_embed --unet_denoing--> images
         variations_image, _ = self.sample(image_embed = image_embed, text = None)
         # batch拆开，依次保存每张图
-        for variation_image, save_path in zip(variations_image, save_path_list):
+        for variation_image, save_path in zip(variations_image, save_image_path_list):
             utils.save_image(variation_image, save_path)
 
         # 保存好图片，全部完成，进度条置100
-        progress = int(self.redis_client.get(self.progress_key).decode('utf-8'))
+        print('图像变换 生成结束')
+        progress = int(self.redis_client.get(self.task_id).decode('utf-8'))
         if self.redis_client and progress==99:
-            self.redis_client.set(self.progress_key, 100)
-            
-    def interpolate(self, path1: Path, path2: Path, save_path_list: list, weight: float):
+            self.redis_client.set(self.task_id, 100)
+        self.working = False
+    
+    def interpolations(self, image_path1: Path, image_path2: Path, save_image_path_list: list, weight: float):
+        '''
+            weight = -1 or 0-1的浮点数
+            -1：生成中间图连续图
+            0-1的浮点数：特征权重
+        '''
         # 设置查询进度条
         self.sample_count = 0
         self.sample_total = sum(self.sample_timesteps)
         
-        image1 = Image.open(path1)
-        image2 = Image.open(path2)
+        image1 = Image.open(image_path1)
+        image2 = Image.open(image_path2)
         image1_tensor = self._pil_to_torch(image1).to('cuda')
         image2_tensor = self._pil_to_torch(image2).to('cuda')
         if weight == -1: 
@@ -3433,7 +3439,7 @@ class Decoder(nn.Module):
                 variation_image = utils.make_grid(variation_image, nrow=1)
                 variation_image_list.append(variation_image)
             result = torch.cat(variation_image_list, dim=2)
-            utils.save_image(result, save_path_list[0])
+            utils.save_image(result, save_image_path_list[0])
         else:
             image1_tensor = image1_tensor.repeat(3, 1, 1, 1)
             image2_tensor = image2_tensor.repeat(3, 1, 1, 1)
@@ -3442,14 +3448,15 @@ class Decoder(nn.Module):
             image_embed = weight * image_embed1 + (1-weight) * image_embed2
             variation_images, cond_images = self.sample(image_embed = image_embed, text = None)
             # batch拆开，依次保存每张图
-            for variation_image, save_path in zip(variation_images, save_path_list):
+            for variation_image, save_path in zip(variation_images, save_image_path_list):
                 utils.save_image(variation_image, save_path)
         
         # 保存好图片，全部完成，进度条置100
-        print('图像插值 生成结束')
-        progress = int(self.redis_client.get(self.progress_key).decode('utf-8'))
-        if self.redis_client and progress==99:
-            self.redis_client.set(self.progress_key, 100)
+        print('图像融合 生成结束')
+        progress = int(self.redis_client.get(self.task_id).decode('utf-8'))
+        if self.redis_client and progress == 99:
+            self.redis_client.set(self.task_id, 100)
+        self.working = False
 
     def spherical_interpolation(self, vector1, vector2, n_interp_points):
         """

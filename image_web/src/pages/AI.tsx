@@ -84,7 +84,7 @@ export default function AI({ visible }: { visible: boolean }) {
       cls: 'justify-self-end'
     },
     {
-      title: '图像插值',
+      title: '图像融合',
       entitle: 'image + image -> image',
       image: coverImg4,
       disclosure: useDisclosure(),

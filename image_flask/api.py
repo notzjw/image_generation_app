@@ -1,10 +1,11 @@
 from functools import wraps
+import logging
 import random
 import time
 from flask import Flask, jsonify, request
 from sql import add_new_user_to_mysql, get_userInfo_by_username, user_login_auth
 from logger import logger
-from diffusion_model import interpolations, variations, set_redis_to_decoder
+from diffusion_model import interpolations, variations, Diffusion_Pipe
 from flask_cors import CORS
 from pathlib import Path
 import redis
@@ -26,7 +27,6 @@ mail = Mail(app)
 
 # 2、 Redis连接实例
 redis_client = redis.StrictRedis(host='localhost', port=6379, db=0)
-set_redis_to_decoder(redis_client)
 # 3、JWT身份验证
 app.config['SECRET_KEY'] = 'zjw19980211..'  # 使用一个安全的密钥
 def create_token(username):
@@ -66,12 +66,10 @@ def token_required(f):
 
     return decorated_function
 
-
-# 4、celery
-# celery = Celery('diffusion_task_list', broker='redis://localhost:6379/0', backend='redis://localhost:6379/0')
-# # 设置并发限制为1
-# celery.conf.task_concurrency = 1
-
+# 4、Diffusion_Pipe
+diffusion_pipe = Diffusion_Pipe()
+diffusion_pipe.set_redis(redis_client)
+diffusion_pipe.start_work()
 
 @app.route('/autologin', methods=['POST'])
 @token_required
@@ -229,24 +227,39 @@ def upload():
     
 # variations
 @app.route('/variations', methods=['POST'])
-def api_variation():
+@token_required
+def api_variation(username: str):
     try:
-        # 清除上一次的progress
-        redis_client.set('progress_uuid', 0)
         # 拿到post的数据
         data = request.get_json()
         image_url = Path(data['image_url'])
         gen_num = data['gen_num']
+
         # 本地路径
         image_path = Path('/mnt/disk/zjw/image_app/image_flask/images') / image_url.name
-
-        gen_image_url_list = variations(image_path, gen_num)
         
+        # 本地路径path list
+        save_image_path_list = [
+            str(Path('/mnt/disk/zjw/image_app/image_flask/results/variations') / (time.strftime("%Y%m%d%H%M%S_", time.localtime()) + '_' + str(i) + '.png'))
+            for i in range(gen_num) # 至少1张，最多3张
+        ]
+
+        model_input = {
+            'image_path': image_path,
+            'save_image_path_list': save_image_path_list,
+        }
+        task_id = diffusion_pipe.add_task(1, 'variations', model_input)
+        
+        # 网络路径url list
+        gen_image_url_list = [
+            'http://10.12.13.99/results/variations/' + Path(save_path).name
+            for save_path in save_image_path_list 
+        ]
         return {
             "success": True, 
             "message": '图像变换成功',
             "data": { 
-                'progress_key': 'progress_uuid',
+                'progress_key': task_id,
                 'progress': 0,
                 'gen_image_url_list': gen_image_url_list
             }
@@ -265,37 +278,51 @@ def api_variation():
 @token_required
 def api_interpolation(username: str):
     try:
-        # 清除上一次的progress
-        redis_client.set('progress_uuid', 0)
-        
         # 拿到post的数据
         data = request.get_json()
         image_url1 = Path(data['image_url1'])
         image_url2 = Path(data['image_url2'])
         weight = data['weight']
-        logger.info('收到图像插值请求：')
-        logger.info('图1：' + str(image_url1))
-        logger.info('图2：' + str(image_url2))
-        logger.info('weight:' + str(weight))
-
+        # 本地路径
         image_path1 = Path('/mnt/disk/zjw/image_app/image_flask/images') / image_url1.name
         image_path2 = Path('/mnt/disk/zjw/image_app/image_flask/images') / image_url2.name
-        gen_image_url_list = interpolations(image_path1, image_path2, weight)
+        # 本地路径path list
+        save_image_path_list = []
+        # 网络路径url list
+        gen_image_url_list = []
+        if weight == -1:
+            merge_image_name = 'gradient_' + time.strftime("%Y%m%d%H%M%S_", time.localtime()) +'.png'
+            save_image_path_list.append(Path('/mnt/disk/zjw/image_app/image_flask/results/interpolations') / merge_image_name)
+            gen_image_url_list.append('http://10.12.13.99/results/interpolations/' + merge_image_name)
+        else:
+            for i in range(3):
+                timestamp = time.strftime("%Y%m%d%H%M%S_", time.localtime())
+                merge_image_name = f"{timestamp}_{i}.png"  
+                save_image_path_list.append(Path('/mnt/disk/zjw/image_app/image_flask/results/interpolations') / merge_image_name)
+                gen_image_url_list.append('http://10.12.13.99/results/interpolations/' + merge_image_name)
+        
+        model_input = {
+            'image_path1': image_path1,
+            'image_path2': image_path2,
+            'save_image_path_list': save_image_path_list,
+            'weight': weight,
+        }
+        task_id = diffusion_pipe.add_task(1, 'interpolations', model_input)
         return {
             "success": True, 
-            "message": '开始图像插值',
+            "message": '开始图像融合',
             "data": { 
-                'progress_key': 'progress_uuid',
+                'progress_key': task_id,
                 'progress': 0,
                 'gen_image_url_list': gen_image_url_list
             }
         } 
     
     except Exception as e:
-        logger.info('图像插值报错', e)
+        logger.info('图像融合报错', e)
         return {
             "success": False, 
-            "message": '图像插值报错'+ str(e),
+            "message": '图像融合报错'+ str(e),
             "data": []
         }
 
@@ -345,7 +372,7 @@ def get_gen_progress(username):
     try:
         progress_key = request.get_json()['progress_key']
         progress = redis_client.get(progress_key).decode('utf-8')
-        logger.info(f'用户【{username}】查询生成进度：{progress}%')
+        # logger.info(f'用户【{username}】查询任务id: {progress_key} 生成进度：{progress}%')
         # 返回图片的url list
         return {
             "success": True, 

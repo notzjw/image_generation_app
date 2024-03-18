@@ -1,4 +1,4 @@
-import { Card, CardBody, CardHeader, User, Image, Code, CardFooter, Button, Input, Tabs, Tab } from '@nextui-org/react'
+import { Card, CardBody, CardHeader, User, Image, Code, CardFooter, Button, Input, Tabs, Tab, Modal, ModalContent, ModalHeader, ModalBody, Checkbox, Link, ModalFooter, useDisclosure } from '@nextui-org/react'
 import React, { useContext, useState } from 'react'
 import { api } from '../lib/api'
 import { defaultUserState, userContext } from '../lib/userContext'
@@ -33,8 +33,118 @@ export default function Personal({ visible }: { visible: boolean }) {
     }
     window.alert(resp.message)
   }
-
+  const { isOpen, onOpen, onOpenChange } = useDisclosure();
   return (
+    // <div className={"w-full h-full flex flex-col items-center" + displaycls}>
+    //   <>
+    //     <Button onPress={onOpen} color="primary">Open Modal</Button>
+    //     <Modal
+    //       backdrop='blur' 
+    //       isOpen={isOpen}
+    //       onOpenChange={onOpenChange}
+    //       placement="top-center"
+    //     >
+    //       {/* <ModalContent>
+    //         {(onClose) => (
+    //           <>
+    //             <ModalHeader className="flex flex-col gap-1">注册</ModalHeader>
+    //             <ModalBody>
+    //             <Input
+    //                 autoFocus
+    //                 // endContent={
+    //                 //   <MailIcon className="text-2xl text-default-400 pointer-events-none flex-shrink-0" />
+    //                 // }
+    //                 label="邮箱"
+    //                 variant="bordered"
+    //               />
+    //               <Input
+    //                 autoFocus
+    //                 // endContent={
+    //                 //   <MailIcon className="text-2xl text-default-400 pointer-events-none flex-shrink-0" />
+    //                 // }
+    //                 label="用户名"
+    //                 variant="bordered"
+    //               />
+    //               <Input
+    //                 // endContent={
+    //                 //   <LockIcon className="text-2xl text-default-400 pointer-events-none flex-shrink-0" />
+    //                 // }
+    //                 label="密码"
+    //                 type="password"
+    //                 variant="bordered"
+    //               />
+    //               <Input
+    //                 // endContent={
+    //                 //   <LockIcon className="text-2xl text-default-400 pointer-events-none flex-shrink-0" />
+    //                 // }
+    //                 label="邮箱验证码"
+    //                 type="text"
+    //                 variant="bordered"
+    //               />
+    //               <div className="flex py-2 px-1 justify-between">
+    //               </div>
+    //             </ModalBody>
+    //             <ModalFooter>
+    //               <Button color="primary" variant="flat" onPress={onClose}>
+    //                 获取验证码
+    //               </Button>
+    //               <Button color="primary" onPress={onClose}>
+    //                 注册
+    //               </Button>
+    //             </ModalFooter>
+    //           </>
+    //         )}
+    //       </ModalContent> */}
+    //       <ModalContent>
+    //         {(onClose) => (
+    //           <>
+    //             <ModalHeader className="flex flex-col gap-1">登陆</ModalHeader>
+    //             <ModalBody>
+    //               <Input
+    //                 autoFocus
+    //                 // endContent={
+    //                 //   <MailIcon className="text-2xl text-default-400 pointer-events-none flex-shrink-0" />
+    //                 // }
+    //                 label="邮箱"
+    //                 placeholder="Enter your email"
+    //                 variant="bordered"
+    //               />
+    //               <Input
+    //                 // endContent={
+    //                 //   <LockIcon className="text-2xl text-default-400 pointer-events-none flex-shrink-0" />
+    //                 // }
+    //                 label="密码"
+    //                 placeholder="Enter your password"
+    //                 type="password"
+    //                 variant="bordered"
+    //               />
+    //               <div className="flex py-2 px-1 justify-between">
+    //                 <Checkbox
+    //                   classNames={{
+    //                     label: "text-small",
+    //                   }}
+    //                 >
+    //                   记住密码
+    //                 </Checkbox>
+    //                 <Link color="primary" href="#" size="sm">
+    //                   忘记密码?
+    //                 </Link>
+    //               </div>
+    //             </ModalBody>
+    //             <ModalFooter>
+    //               <Button color="danger" variant="flat" onPress={onClose}>
+    //                 关闭
+    //               </Button>
+    //               <Button color="primary" onPress={onClose}>
+    //                 登录
+    //               </Button>
+    //             </ModalFooter>
+    //           </>
+    //         )}
+    //       </ModalContent>
+    //     </Modal>
+    //   </>
+    // </div>
     <div className={"w-full h-full flex flex-col items-center" + displaycls}>
       <div className='w-1/3 h-full'>
         {/* 在线 */
